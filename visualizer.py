@@ -7,7 +7,7 @@ import math
 
 import numpy as np
 from PySide import QtCore, QtGui
-from PySide.QtCore import QPointF, Qt
+from PySide.QtCore import QPointF, Qt, QPoint
 
 SAMPLE_MAX = 32767
 SAMPLE_MIN = -(SAMPLE_MAX + 1)
@@ -202,7 +202,7 @@ class CustomVisualizer(Visualizer):
 
         # custom constants
         self.ampl_range = (1000, 20000)  # (lower bound, spectrum width)
-        self.freq_step_size = 50 # 24 points maximum, 2 minimum
+        self.freq_step_size = 50  # 24 points maximum, 2 minimum
         self.max_points = 24
         self.freq_min = 200
         self.inner_rad = 200
@@ -240,14 +240,14 @@ class CustomVisualizer(Visualizer):
         :return: QPointF, QPointF
         """
         inner_angle = float(idx) / points * 2 * math.pi
-        outer_angle = (float(idx) * 2 + 1) / points * 2 * math.pi
+        outer_angle = float(idx) / points * 2 * math.pi + math.pi / points
         inner_x = self.inner_rad * math.cos(inner_angle) + self.center[0]
         inner_y = self.inner_rad * math.sin(inner_angle) + self.center[1]
         outer_x = self.outer_rad * math.cos(outer_angle) + self.center[0]
         outer_y = self.outer_rad * math.sin(outer_angle) + self.center[1]
 
-        inner_point = QPointF(inner_x, inner_y)
-        outer_point = QPointF(outer_x, outer_y)
+        inner_point = QPoint(inner_x, inner_y)
+        outer_point = QPoint(outer_x, outer_y)
 
         return inner_point, outer_point
 
@@ -278,7 +278,6 @@ class CustomVisualizer(Visualizer):
 
         return self.__getStarPoints__(int(points))
 
-
     def generate(self, data):
         fft = np.absolute(np.fft.rfft(data, n=len(data)))
         freq = np.fft.fftfreq(len(fft), d=1. / SAMPLE_RATE)
@@ -286,7 +285,6 @@ class CustomVisualizer(Visualizer):
         max_amplitude = np.amax(data)
         brush = self.__getColor__(max_amplitude)
         star_points = self.__getPoints__(max_freq)
-
 
         # ----------------------------------------------------------------------------- #
 
@@ -297,7 +295,7 @@ class CustomVisualizer(Visualizer):
         # painter.setPen(QtCore.Qt.NoPen)
         painter.setBrush(brush)
 
-        painter.drawPolyline(star_points)
+        painter.drawPolygon(star_points, fill_rule=Qt.FillRule.WindingFill)
         del painter  #
 
         return img
