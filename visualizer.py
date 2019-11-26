@@ -201,20 +201,33 @@ class CustomVisualizer(Visualizer):
         self.brush = self.brushes[0]
 
         # custom constants
-        self.ampl_range = (1000, 20000)  # (lower bound, spectrum width)
-        self.freq_step_size = 50  # 24 points maximum, 2 minimum
-        self.max_points = 24
-        self.freq_min = 200
-        self.inner_rad = 200
+        self.ampl_range = (500, 10000)  # (lower bound, spectrum width)
+        self.freq_range = (200, 2000) # (lower bound, spectrum width)
+        self.max_points = 128
+
+        self.inner_rad = 50
         self.inner_circ = 2 * math.pi * self.inner_rad
         self.outer_rad = 400
         self.outer_circ = 2 * math.pi * self.outer_rad
         self.center = (400, 400)
+
+        self.rollingAmpl = 80
+        self.rollingFreq = 300
+        self.amplLearningRate = 0.90
+        self.freqLearningRate = 0.90
         # end custom constants
 
-        self.display_odds = True
-        self.display_evens = True
+        self.use_rolling = False
+        self.display_stats = False
         self.is_fullscreen = False
+
+
+    def __getDecimalRange__(self, val, isAmpl):
+        if isAmpl:
+            return (val - self.ampl_range[0]) / self.ampl_range[1]
+        else:
+            return (val - self.freq_range[0]) / self.freq_range[1]
+
 
     def __getStarPoints__(self, points):
         """
@@ -251,24 +264,33 @@ class CustomVisualizer(Visualizer):
 
         return inner_point, outer_point
 
-    def __getColor__(self, ampl):
+    def __getColor__(self, val):
         """
 
         :param ampl: Float
         :return: QBrush
         """
-        color = (ampl - self.ampl_range[0]) / self.ampl_range[1] * 255
+        colVal =  self.__getDecimalRange__(val, False)
+        pastHalf = colVal > 0.5
+
+        color = (colVal - 0.5) * 2 if pastHalf else colVal * 2
+
+        color = color * 255
+
         if color < 0:
             color = 0
 
         if color > 255:
             color = 255
 
-        brush = QtGui.QBrush(QtGui.QColor(color, 255 - color, 0))
-        return brush
+        if pastHalf:
+            return QtGui.QBrush(QtGui.QColor(color, 255 - color, 0))
+        else:
+            return QtGui.QBrush(QtGui.QColor(0, color, 255 - color))
 
-    def __getPoints__(self, max_freq):
-        points = (max_freq - self.freq_min) / self.freq_step_size
+
+    def __getPoints__(self, val):
+        points = self.__getDecimalRange__(val, True) * self.max_points
 
         if points < 2:
             points = 2
@@ -278,13 +300,45 @@ class CustomVisualizer(Visualizer):
 
         return self.__getStarPoints__(int(points))
 
+
+    def __updateRolling__(self, max_amplitude, max_freq):
+        self.rollingAmpl = self.rollingAmpl * self.amplLearningRate + max_amplitude * (1 - self.amplLearningRate)
+        self.rollingFreq = self.rollingFreq * self.freqLearningRate + max_freq * (1 - self.freqLearningRate)
+
+
+    def __drawStats__(self, painter, max_amplitude, max_freq):
+        painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 255, 255)))
+        topLeftRect = QtCore.QRect(0, 0, 200, 50)
+        topRightRect = QtCore.QRect(self.width() - 200, 0, 200, 50)
+        painter.drawRect(topLeftRect)
+        painter.drawRect(topRightRect)
+        painter.setFont(QtGui.QFont('Decorative', 10))
+        painter.drawText(topLeftRect, Qt.AlignCenter, getTrimString(max_amplitude)) 
+        painter.drawText(topRightRect, Qt.AlignCenter, getTrimString(max_freq))
+        if (self.use_rolling):
+            bottomRightRect = QtCore.QRect(self.width() - 200, self.height() - 50, 200, 50)
+            painter.drawRect(bottomRightRect)
+            painter.drawText(bottomRightRect, Qt.AlignCenter, str(self.amplLearningRate))
+
+
     def generate(self, data):
         fft = np.absolute(np.fft.rfft(data, n=len(data)))
-        freq = np.fft.fftfreq(len(fft), d=1. / SAMPLE_RATE)
-        max_freq = abs(freq[fft == np.amax(fft)][0])
+        freqs = np.fft.fftfreq(len(fft), d=1. / SAMPLE_RATE)
+        max_freq = abs(freqs[fft == np.amax(fft)][0])
         max_amplitude = np.amax(data)
-        brush = self.__getColor__(max_amplitude)
-        star_points = self.__getPoints__(max_freq)
+
+        self.__updateRolling__(max_amplitude, max_freq)
+        
+        if self.use_rolling:
+            ampl = self.rollingAmpl
+            freq = self.rollingFreq
+        else:
+            ampl = max_amplitude
+            freq = max_freq
+
+
+        brush = self.__getColor__(freq)
+        star_points = self.__getPoints__(ampl)
 
         # ----------------------------------------------------------------------------- #
 
@@ -292,10 +346,52 @@ class CustomVisualizer(Visualizer):
         img.fill(0)  # black
 
         painter = QtGui.QPainter(img)
-        # painter.setPen(QtCore.Qt.NoPen)
-        painter.setBrush(brush)
 
+        if self.display_stats:
+            self.__drawStats__(painter, ampl, freq)
+        
+
+        painter.setBrush(brush)
         painter.drawPolygon(star_points, fill_rule=Qt.FillRule.WindingFill)
         del painter  #
 
         return img
+
+    def keyPressEvent(self, event):
+        if event.key() == QtCore.Qt.Key_S:
+            self.display_stats = not self.display_stats
+        elif event.key() == QtCore.Qt.Key_R:
+            self.use_rolling = not self.use_rolling
+        elif event.key() == QtCore.Qt.Key_Equal:
+            if (self.amplLearningRate < 0.99):
+                self.amplLearningRate += 0.01
+                self.freqLearningRate += 0.01
+        elif event.key() == QtCore.Qt.Key_Minus:
+            if (self.amplLearningRate > 0.01):
+                self.amplLearningRate -= 0.01
+                self.freqLearningRate -= 0.01
+        elif event.key() == QtCore.Qt.Key_Escape:
+            if self.is_fullscreen:
+                self.showNormal()
+                self.is_fullscreen = False
+            else:
+                self.showFullScreen()
+                self.is_fullscreen = True
+            self.center = (self.width() / 2, self.height() / 2)
+        else:
+            # Qt.Key enum helpfully defines most keys as their ASCII code,
+            #   so we can use ord('Q') instead of Qt.Key.Key_Q
+            color_bindings = dict(zip((ord(i) for i in 'QWERTYU'), self.brushes))
+            try:
+                self.brush = color_bindings[event.key()]
+            except KeyError:
+                if QtCore.Qt.Key_0 == event.key():
+                    self.columns = 10
+                elif QtCore.Qt.Key_1 <= event.key() <= QtCore.Qt.Key_9:
+                    self.columns = event.key() - QtCore.Qt.Key_1 + 1
+
+
+def getTrimString(num):
+    numString = str(num)
+    decimalSpot = numString.index(".")
+    return numString[0:decimalSpot + 2]
