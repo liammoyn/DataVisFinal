@@ -201,8 +201,8 @@ class CustomVisualizer(Visualizer):
         self.brush = self.brushes[0]
 
         # custom constants
-        self.ampl_range = (500, 10000)  # (lower bound, spectrum width)
-        self.freq_range = (200, 2000) # (lower bound, spectrum width)
+        self.ampl_range = (1000, 100)  # (lower bound, spectrum width)
+        self.freq_range = (1000, 100) # (lower bound, spectrum width)
         self.max_points = 128
 
         self.inner_rad = 50
@@ -224,9 +224,19 @@ class CustomVisualizer(Visualizer):
 
     def __getDecimalRange__(self, val, isAmpl):
         if isAmpl:
-            return (val - self.ampl_range[0]) / self.ampl_range[1]
+            valRatio = (val - self.ampl_range[0]) / self.ampl_range[1]
+            if valRatio > 1:
+                self.ampl_range = (self.ampl_range[0], val - self.ampl_range[0])
+            elif valRatio < 0:
+                self.ampl_range = (val, self.ampl_range[1])
         else:
-            return (val - self.freq_range[0]) / self.freq_range[1]
+            valRatio = (val - self.freq_range[0]) / self.freq_range[1]
+            if valRatio > 1:
+                self.freq_range = (self.freq_range[0], val - self.freq_range[0])
+            elif valRatio < 0:
+                self.freq_range = (val, self.freq_range[1])
+
+        return valRatio
 
 
     def __getStarPoints__(self, points):
@@ -301,6 +311,11 @@ class CustomVisualizer(Visualizer):
         return self.__getStarPoints__(int(points))
 
 
+    def __updateMaximums__(self):
+        self.ampl_range = (self.ampl_range[0], self.ampl_range[1] * 0.999)
+        self.freq_range = (self.freq_range[0], self.freq_range[1] * 0.999) 
+
+
     def __updateRolling__(self, max_amplitude, max_freq):
         self.rollingAmpl = self.rollingAmpl * self.amplLearningRate + max_amplitude * (1 - self.amplLearningRate)
         self.rollingFreq = self.rollingFreq * self.freqLearningRate + max_freq * (1 - self.freqLearningRate)
@@ -310,15 +325,35 @@ class CustomVisualizer(Visualizer):
         painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 255, 255)))
         topLeftRect = QtCore.QRect(0, 0, 200, 50)
         topRightRect = QtCore.QRect(self.width() - 200, 0, 200, 50)
+        topLeftText = QtCore.QRect(10, 5, 180, 40)
+        topRightText = QtCore.QRect(self.width() - 190, 5, 180, 40)
         painter.drawRect(topLeftRect)
         painter.drawRect(topRightRect)
+
         painter.setFont(QtGui.QFont('Decorative', 10))
-        painter.drawText(topLeftRect, Qt.AlignCenter, getTrimString(max_amplitude)) 
-        painter.drawText(topRightRect, Qt.AlignCenter, getTrimString(max_freq))
+        painter.drawText(topLeftText, Qt.AlignLeft | Qt.AlignVCenter, "Amplitude") 
+        painter.drawText(topLeftText, Qt.AlignRight | Qt.AlignVCenter, getTrimString(max_amplitude)) 
+        painter.drawText(topRightText, Qt.AlignLeft | Qt.AlignVCenter, "Frequency") 
+        painter.drawText(topRightText, Qt.AlignRight | Qt.AlignVCenter, getTrimString(max_freq))
+
+
+        bottomLeftRect = QtCore.QRect(0, self.height() - 70, 250, 70)
+        bottomLeftText = QtCore.QRect(10, self.height() - 65, 230, 60)
+        painter.drawRect(bottomLeftRect)
+        painter.drawText(bottomLeftText, Qt.AlignLeft | Qt.AlignTop, "Ampl") 
+        painter.drawText(bottomLeftText, Qt.AlignHCenter | Qt.AlignTop, getTrimString(self.ampl_range[0])) 
+        painter.drawText(bottomLeftText, Qt.AlignRight | Qt.AlignTop, getTrimString(self.ampl_range[0] + self.ampl_range[1])) 
+        painter.drawText(bottomLeftText, Qt.AlignLeft | Qt.AlignBottom, "Freq") 
+        painter.drawText(bottomLeftText, Qt.AlignHCenter | Qt.AlignBottom, getTrimString(self.freq_range[0]))
+        painter.drawText(bottomLeftText, Qt.AlignRight | Qt.AlignBottom, getTrimString(self.freq_range[1] + self.freq_range[0]))
+
+
         if (self.use_rolling):
             bottomRightRect = QtCore.QRect(self.width() - 200, self.height() - 50, 200, 50)
+            bottomRightText = QtCore.QRect(self.width() - 190, self.height() - 45, 180, 40)
             painter.drawRect(bottomRightRect)
-            painter.drawText(bottomRightRect, Qt.AlignCenter, str(self.amplLearningRate))
+            painter.drawText(bottomRightText, Qt.AlignLeft | Qt.AlignVCenter, "Learning Rate")
+            painter.drawText(bottomRightText, Qt.AlignRight | Qt.AlignVCenter, str(self.amplLearningRate))
 
 
     def generate(self, data):
@@ -328,6 +363,7 @@ class CustomVisualizer(Visualizer):
         max_amplitude = np.amax(data)
 
         self.__updateRolling__(max_amplitude, max_freq)
+        self.__updateMaximums__()
         
         if self.use_rolling:
             ampl = self.rollingAmpl
