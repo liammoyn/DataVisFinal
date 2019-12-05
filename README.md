@@ -34,8 +34,8 @@ Controls
 --------
 <table>
 <tr><td>Esc</td><td>Enter and exit full screen mode</td></tr>
-<tr><td>1-9</td><td>Change number of columns displayed</td></tr>
-<tr><td>Q-T</td><td>Change color</td></tr>
-<tr><td>I-P</td><td>Hide or show columns</td></tr>
+<tr><td>S</td><td>Toggle showing or hiding statistics</td></tr>
+<tr><td>R</td><td>Toggle rolling averages for amplitude and frequency</td></tr>
+<tr><td>+/-</td><td>Increase or decrease rolling average learning rate</td></tr>
 </table>
 
